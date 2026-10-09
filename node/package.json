@@ -1,0 +1,11 @@
+{
+  "name": "sol-vpn-node",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "mock": "node src/main.ts --mock",
+    "test": "node test.ts"
+  }
+}
