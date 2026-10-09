@@ -29,11 +29,11 @@ The app refuses unless: signature chain valid, report_data matches, measurement 
 
 ### POST /session
 ```json
-{ "client_wg_pubkey": "<base64>", "reserve_tx": "<solana tx signature of reserve()>" }
+{ "client_wg_pubkey": "<base64>", "reserve": "<base64 makeReserveInput(...) — Arcium-encrypted {slot, secret, minutes}>" }
 -> { "session_id": "<opaque string>", "client_ip": "10.8.0.X/32", "dns": "10.8.0.1", "expires_at": <unix s> }
 ```
-Node checks the reserve result for this node on-chain ({ok, minutes}), adds the WG peer, expiry = reserved minutes.
-Errors: 402 reserve failed, 409 reserve_tx already used.
+The NODE submits reserve (node pays the fee, so the user's deposit wallet never touches reserve), waits for {ok, minutes},
+then adds the WG peer, expiry = reserved minutes. Takes a few seconds. Errors: 402 reserve failed, 409 same input reused.
 
 ### POST /session/:id/voucher
 ```json
@@ -48,11 +48,13 @@ Node submits `redeem(latest voucher)` when the session ends.
 - Token price: 1 minute = 10_000 USDC base units ($0.01). Devnet USDC mint configurable.
 - 16 slots (Arcium callback size limit) — anonymity set is 16. User picks a random slot and a random nonzero u64 secret.
 - deposit(amount, Enc(slot, secret)) -> ok=false means slot taken, funds refunded; retry another slot.
+- makeReserveInput(mxeKey, {slot, secret, minutes}) -> base64 (client); submitReserve(program, inputB64, nodeId) -> {reserveTx, ok, minutes} (node signs)
 - reserve(Enc(slot, secret, minutes), node_id) -> public {ok, minutes} in the Reservation account named in the reserve tx (verifyReserve); lands a few seconds after the tx. One open reservation per slot; max 65_535 minutes.
 - redeem(Enc voucher {slot, secret, total_minutes, counter, node_id}); signer = node authority. Counter strictly increases per slot for the slot's whole lifetime.
 - settle() reveals cumulative per-node totals; claim(node_id) pays the difference: 88% node, 12% treasury.
 - register_node(endpoint, tee 0 mock/1 tdx/2 sev-snp, expected_measurement[48]) -> node_id; signer = node authority (payout address)
-- Privacy: reserve must be paid by a wallet not linked to the depositing wallet (relayer or node), or deposit and reserve link on-chain.
+- Privacy: reserve and redeem are submitted by the node, never the user's wallet.
+- Devnet: program id, config, mint, MXE key in ledger/devnet.json (written by the deploy). Token = our own devnet test mint (6 decimals), not Circle USDC.
 
 ## WireGuard
 Client AllowedIPs = 0.0.0.0/0, ::/0 (tunnel is IPv4-only; this blackholes IPv6 instead of leaking it).
