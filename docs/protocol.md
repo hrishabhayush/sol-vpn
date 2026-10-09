@@ -56,5 +56,8 @@ Client AllowedIPs = 0.0.0.0/0, ::/0 (tunnel is IPv4-only; this blackholes IPv6 i
 Subnet 10.8.0.0/24, node 10.8.0.1 (also DNS resolver), UDP 51820.
 
 ## Measurement (see node/README.md)
-TDX: MRTD (quote bytes 184..232); SNP: MEASUREMENT (report 0x90..0xC0). Reject debug guests.
-MRTD covers firmware only, not the daemon. Daemon binding via RTMR3 needs kernel >= 6.16 — open decision.
+NodeRegistry.expected_measurement (48 bytes):
+- TDX: SHA-384(MRTD || RTMR3). Quote v4 offsets: MRTD [184..232), RTMR3 [520..568), REPORTDATA [568..632), TDATTRIBUTES [168..176) bit 0 must be 0.
+  Expected RTMR3 = output of `node node/deploy/expected-rtmr3.ts` on the trusted commit (hashes node/package.json + node/src/**).
+- SNP (fallback, firmware only): SHA-384(MEASUREMENT [0x90..0xC0)); reject if POLICY (0x08) bit 19 set.
+Gap: root on the VM can still run other code after measurement; locked image is future work.

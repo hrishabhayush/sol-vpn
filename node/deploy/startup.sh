@@ -6,8 +6,9 @@ NODE_VER=v24.10.0
 
 if ! command -v wg >/dev/null || ! command -v node >/dev/null; then
   apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools unbound iptables curl xz-utils \
-    "linux-modules-extra-$(uname -r)"   # tdx_guest lives here on GCP Ubuntu kernels
+  DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools unbound iptables curl xz-utils
+  # tdx_guest lives here on some GCP Ubuntu kernels; harmless if the package doesn't exist
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-modules-extra-$(uname -r)" || true
   curl -fsSL "https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-linux-x64.tar.xz" -o /tmp/node.tar.xz
   curl -fsSL "https://nodejs.org/dist/$NODE_VER/SHASUMS256.txt" | grep "node-$NODE_VER-linux-x64.tar.xz" \
     | sed 's#  .*#  /tmp/node.tar.xz#' | sha256sum -c -
@@ -59,6 +60,9 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl enable sol-vpn-node
-[ -f /opt/sol-vpn/node/src/main.ts ] && systemctl restart sol-vpn-node || echo "daemon code not present yet"
+systemctl daemon-reload   # not enabled: only started below, after the code is measured into RTMR3
+[ -f /opt/sol-vpn/node/src/main.ts ] || { echo "daemon code not present yet; copy it and reboot"; exit 0; }
+# TDX: measure the daemon code into RTMR3 (kernel >= 6.16). set -e: extend fails -> daemon not started.
+# SEV-SNP has no RTMRs; it runs with firmware-only measurement.
+[ -e /dev/tdx_guest ] && node /opt/sol-vpn/node/deploy/expected-rtmr3.ts --extend
+systemctl restart sol-vpn-node
