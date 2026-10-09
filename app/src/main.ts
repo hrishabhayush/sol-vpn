@@ -11,16 +11,15 @@ let nodes: ledger.Node[] = [];
 let picked = 0;
 let minutesLeft = 0;
 let error = "";
-let conn: { node: ledger.Node; session: Session; started: number; counter: number; timers: number[] } | null = null;
+let conn: { node: ledger.Node; session: Session; started: number; paid: number; timers: number[] } | null = null;
 
 function render(html: string) {
   app.innerHTML = html;
 }
 
 async function showDisconnected() {
-  const secret = await invoke<string>("slot_secret");
-  [nodes, minutesLeft] = await Promise.all([ledger.listNodes(), ledger.minutesLeft(secret)]);
-  
+  [nodes, minutesLeft] = await Promise.all([ledger.listNodes(), ledger.minutesLeft()]);
+
   render(`
     <h3>Disconnected</h3>
     <select id="node">${nodes.map((n) => `<option value="${n.id}" ${n.id === picked ? "selected" : ""}>${esc(n.name)}</option>`).join("")}</select>
@@ -41,16 +40,18 @@ async function connect() {
   try {
     att = await invoke<Attested>("verify_attestation", { nodeUrl: node.url, expectedMeasurement: node.expectedMeasurement });
     if (att.node_id !== node.id) throw `node claims id ${att.node_id}, registry entry is ${node.id}`;
+    if (att.tee !== node.tee) throw `node attested as ${att.tee}, registry says ${node.tee}`;
   } catch (e) {
     render(`<h3>Refused</h3><p>This node failed attestation.</p><p class="err">${esc(String(e))}</p><button id="back">Back</button>`);
     document.getElementById("back")!.onclick = showDisconnected;
     return;
   }
   try {
-    const secret = await invoke<string>("slot_secret");
-    const reserveTx = await ledger.reserve(secret, node.id, Math.min(minutesLeft, 60));
-    const session = await invoke<Session>("connect", { nodeUrl: node.url, serverPubkey: att.wg_pubkey, endpoint: att.endpoint, reserveTx });
-    conn = { node, session, started: Date.now(), counter: 0, timers: [] };
+    if (minutesLeft < 1) throw "no minutes left: top up first";
+    render(`<h3>Reserving minutes…</h3><p class="small">${esc(node.name)} (${esc(att.tee)} ${esc(att.measurement.slice(0, 16))}…)</p>`);
+    const reserve = await ledger.makeReserveInput(Math.min(minutesLeft, 60));
+    const session = await invoke<Session>("connect", { nodeUrl: node.url, serverPubkey: att.wg_pubkey, endpoint: att.endpoint, reserve });
+    conn = { node, session, started: Date.now(), paid: 0, timers: [] };
     await payMinute(); // pay the first minute up front, then one voucher every 60 s
     conn.timers.push(window.setInterval(payMinute, 60_000), window.setInterval(showConnected, 1000));
     showConnected();
@@ -64,11 +65,11 @@ async function payMinute() {
   if (!conn) return;
   const c = conn;
   const minutes = usedMinutes(c);
-  const counter = ++c.counter;
   try {
-    const secret = await invoke<string>("slot_secret");
-    const voucher = await ledger.makeVoucher(secret, c.node.id, minutes, counter);
+    const { voucher, counter } = await ledger.makeVoucher(c.node.id, minutes);
     await invoke("send_voucher", { nodeUrl: c.node.url, sessionId: c.session.session_id, voucher, minutes, counter });
+    if (minutes > c.paid) await ledger.spend(minutes - c.paid);
+    c.paid = Math.max(c.paid, minutes);
   } catch (e) {
     error = `voucher failed: ${e}`;
     // 402 underpaid / reserve exhausted, 404 session ended: the node already dropped us.
@@ -106,15 +107,35 @@ async function disconnect() {
 async function showTopUp() {
   render(`
     <h3>Top up</h3>
-    <input id="amount" value="1" inputmode="decimal"> <button id="gen">Show QR (USDC)</button>
+    <p class="small" id="wallet">Wallet…</p>
+    <input id="amount" value="1" inputmode="decimal"> <button id="gen">Show QR</button> <button id="deposit">Deposit</button>
     <div id="qr"></div>
     <button id="back">Back</button>`);
   document.getElementById("back")!.onclick = showDisconnected;
-  document.getElementById("gen")!.onclick = async () => {
-    const amountUsdc = (document.getElementById("amount") as HTMLInputElement).value.trim();
-    const qr = document.getElementById("qr")!;
+  const amount = () => (document.getElementById("amount") as HTMLInputElement).value.trim();
+  const qr = document.getElementById("qr")!;
+  const showWallet = () =>
+    ledger.wallet().then(
+      (w) => (document.getElementById("wallet")!.innerHTML = `Wallet (devnet) <code>${esc(w.address)}</code><br>${w.sol} SOL (fees), ${esc(w.tokens)} test tokens`),
+      (e) => (qr.innerHTML = `<p class="err">${esc(String(e))}</p>`),
+    );
+  showWallet();
+  // Moves tokens from the app wallet into the encrypted ledger slot (1 token = 100 minutes).
+  document.getElementById("deposit")!.onclick = async () => {
+    qr.innerHTML = `<p>Depositing… (MPC, can take a minute)</p>`;
     try {
-      const t = await invoke<{ url: string; svg: string }>("topup", { amountUsdc });
+      const [int, frac = ""] = amount().split(".");
+      const minutes = await ledger.deposit(BigInt(int + frac.padEnd(6, "0").slice(0, 6)));
+      qr.innerHTML = `<p>Deposited. Minutes left: ${minutes}</p>`;
+      showWallet();
+    } catch (e) {
+      qr.innerHTML = `<p class="err">${esc(String(e))}</p>`;
+    }
+  };
+  document.getElementById("gen")!.onclick = async () => {
+    const amountUsdc = amount();
+    try {
+      const t = await invoke<{ url: string; svg: string }>("topup", { amountUsdc, mint: ledger.MINT });
       qr.innerHTML = `${t.svg}<p class="small">${esc(t.url)}</p>`;
     } catch (e) {
       qr.innerHTML = `<p class="err">${esc(String(e))}</p>`;

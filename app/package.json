@@ -11,11 +11,18 @@
     "mock-node": "node ../node/src/main.ts --mock"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2"
+    "@anchor-lang/core": "^1.2.1",
+    "@arcium-hq/client": "0.15.0",
+    "@noble/hashes": "^1.8.0",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "@tauri-apps/api": "^2",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "vite": "^8.0.16",
-    "typescript": "~6.0.3"
+    "@types/node": "^26.6.5",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
   }
 }

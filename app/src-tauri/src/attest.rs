@@ -165,3 +165,21 @@ fn against_mock_node() {
     let bad = tauri::async_runtime::block_on(verify("http://127.0.0.1:1", "")).err().unwrap();
     assert!(bad.contains("unreachable"), "{bad}");
 }
+
+/// Live TDX node: `cargo test live_tdx -- --ignored --nocapture`.
+/// EXPECTED_MEASUREMENT overrides the default (it changes whenever the node redeploys; the app reads it from NodeRegistry).
+#[cfg(test)]
+#[test]
+#[ignore]
+fn live_tdx_node() {
+    let url = std::env::var("NODE_URL").unwrap_or("http://34.172.3.92:8443".into());
+    let want = std::env::var("EXPECTED_MEASUREMENT").unwrap_or(
+        "d83aa0c346c50864c816a1e36cb6169175223b38b2c5ae49ffc881a798345a44546eb6c59c1c004d49002d7bac78280c".into(),
+    );
+    let ok = tauri::async_runtime::block_on(verify(&url, &want)).unwrap();
+    println!("tee={} measurement={} tcb={} node_id={} wg={}", ok.tee, ok.measurement, ok.tcb_status, ok.node_id, ok.wg_pubkey);
+    assert_eq!(ok.tee, "tdx");
+    let tampered = format!("{}{}", if want.starts_with('0') { '1' } else { '0' }, &want[1..]);
+    let bad = tauri::async_runtime::block_on(verify(&url, &tampered)).err().unwrap();
+    assert!(bad.contains("measurement mismatch"), "{bad}");
+}

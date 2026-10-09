@@ -5,6 +5,14 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
+  // ledger/client (../ledger) is built for Node: shim its builtins and resolve its deps from app/node_modules.
+  resolve: {
+    alias: [
+      { find: /^(node:)?(crypto|fs)$/, replacement: "/src/node-shim.ts" },
+      { find: /^@anchor-lang\/core$/, replacement: "/src/anchor-shim.ts" },
+    ],
+    dedupe: ["@anchor-lang/core", "@arcium-hq/client", "@solana/web3.js", "@solana/spl-token", "buffer"],
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -22,6 +30,7 @@ export default defineConfig(() => ({
           port: 1421,
         }
       : undefined,
+    fs: { allow: [".."] },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

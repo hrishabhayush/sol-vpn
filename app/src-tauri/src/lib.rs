@@ -7,8 +7,6 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, WindowEvent};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-// Devnet USDC. ponytail: hardcoded devnet; make it configurable when we go to mainnet.
-const USDC_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const IFACE: &str = "solvpn"; // wg-quick on macOS needs the conf file named <iface>.conf
 
 type R<T> = Result<T, String>;
@@ -79,6 +77,37 @@ fn wallet_address() -> R<String> {
     wallet_pubkey()
 }
 
+/// Signs a Solana tx message with the wallet key (the key never leaves Rust).
+#[tauri::command]
+fn sign(msg: Vec<u8>) -> R<Vec<u8>> {
+    use ed25519_dalek::Signer;
+    let k = ed25519_dalek::SigningKey::from_keypair_bytes(&secrets()?[..64].try_into().unwrap()).map_err(err)?;
+    Ok(k.sign(&msg).to_bytes().to_vec())
+}
+
+/// Ledger state {slot, counter, minutes} as JSON, one file per wallet (debug and release have different secrets).
+/// Losing it loses the slot and voucher counter, so writes go through a temp file + rename.
+fn state_path(app: &AppHandle) -> R<PathBuf> {
+    Ok(conf_path(app)?.with_file_name(format!("state-{}.json", wallet_pubkey()?)))
+}
+
+#[tauri::command]
+fn load_state(app: AppHandle) -> R<Option<String>> {
+    match std::fs::read_to_string(state_path(&app)?) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(err(e)),
+    }
+}
+
+#[tauri::command]
+fn save_state(app: AppHandle, state: String) -> R<()> {
+    let p = state_path(&app)?;
+    let tmp = p.with_extension("tmp");
+    std::fs::write(&tmp, state).map_err(err)?;
+    std::fs::rename(tmp, p).map_err(err)
+}
+
 /// Ledger slot secret (hex), handed to the TS ledger client for Arcium encryption.
 #[tauri::command]
 fn slot_secret() -> R<String> {
@@ -91,11 +120,11 @@ struct TopUp {
     svg: String,
 }
 
-/// Solana Pay transfer request funding the app wallet with USDC.
+/// Solana Pay transfer request funding the app wallet with `mint` (6 decimals; ledger/devnet.json).
 #[tauri::command]
-fn topup(amount_usdc: String) -> R<TopUp> {
+fn topup(amount_usdc: String, mint: String) -> R<TopUp> {
     let reference = bs58::encode(rand::random::<[u8; 32]>()).into_string();
-    let url = solana_pay_url(&wallet_pubkey()?, &amount_usdc, &reference)?;
+    let url = solana_pay_url(&wallet_pubkey()?, &amount_usdc, &mint, &reference)?;
     let svg = qrcode::QrCode::new(&url)
         .map_err(err)?
         .render::<qrcode::render::svg::Color>()
@@ -104,7 +133,7 @@ fn topup(amount_usdc: String) -> R<TopUp> {
     Ok(TopUp { url, svg })
 }
 
-fn solana_pay_url(recipient: &str, amount: &str, reference: &str) -> R<String> {
+fn solana_pay_url(recipient: &str, amount: &str, mint: &str, reference: &str) -> R<String> {
     // Spec: decimal "user" units, leading zero required, no exponent; USDC has 6 decimals.
     let (int, frac) = amount.split_once('.').unwrap_or((amount, "0"));
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
@@ -112,7 +141,7 @@ fn solana_pay_url(recipient: &str, amount: &str, reference: &str) -> R<String> {
         return Err(format!("invalid amount {amount:?}"));
     }
     Ok(format!(
-        "solana:{recipient}?amount={amount}&spl-token={USDC_MINT}&reference={reference}&label=sol-vpn&message=Top%20up%20VPN%20minutes"
+        "solana:{recipient}?amount={amount}&spl-token={mint}&reference={reference}&label=sol-vpn&message=Top%20up%20VPN%20minutes"
     ))
 }
 
@@ -156,10 +185,10 @@ fn wg_quick(action: &str, conf: &std::path::Path) -> R<()> {
     Ok(())
 }
 
-async fn open_session(node_url: &str, client_wg_pubkey: &str, reserve_tx: &str) -> R<Session> {
+async fn open_session(node_url: &str, client_wg_pubkey: &str, reserve: &str) -> R<Session> {
     reqwest::Client::new()
         .post(format!("{}/session", node_url.trim_end_matches('/')))
-        .json(&serde_json::json!({ "client_wg_pubkey": client_wg_pubkey, "reserve_tx": reserve_tx }))
+        .json(&serde_json::json!({ "client_wg_pubkey": client_wg_pubkey, "reserve": reserve }))
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -170,13 +199,13 @@ async fn open_session(node_url: &str, client_wg_pubkey: &str, reserve_tx: &str) 
 }
 
 #[tauri::command]
-async fn connect(app: AppHandle, node_url: String, server_pubkey: String, endpoint: String, reserve_tx: String) -> R<Session> {
+async fn connect(app: AppHandle, node_url: String, server_pubkey: String, endpoint: String, reserve: String) -> R<Session> {
     let secret = x25519_dalek::StaticSecret::from(rand::random::<[u8; 32]>());
     let public = x25519_dalek::PublicKey::from(&secret);
     // Per-connection key; it only needs to live in the 0600 wg config below.
     let private_key = B64.encode(secret.to_bytes());
 
-    let s = open_session(&node_url, &B64.encode(public.as_bytes()), &reserve_tx).await?;
+    let s = open_session(&node_url, &B64.encode(public.as_bytes()), &reserve).await?;
 
     let conf = conf_path(&app)?;
     {
@@ -261,6 +290,9 @@ pub fn run() {
             verify_attestation,
             wallet_address,
             slot_secret,
+            sign,
+            load_state,
+            save_state,
             topup,
             connect,
             disconnect,
@@ -282,10 +314,10 @@ mod tests {
         assert!(c.contains("AllowedIPs = 0.0.0.0/0, ::/0"));
         assert!(c.contains("Endpoint = 1.2.3.4:51820"));
 
-        let u = solana_pay_url("Rcpt", "0.5", "Ref").unwrap();
-        assert_eq!(u, format!("solana:Rcpt?amount=0.5&spl-token={USDC_MINT}&reference=Ref&label=sol-vpn&message=Top%20up%20VPN%20minutes"));
+        let u = solana_pay_url("Rcpt", "0.5", "Mint", "Ref").unwrap();
+        assert_eq!(u, format!("solana:Rcpt?amount=0.5&spl-token=Mint&reference=Ref&label=sol-vpn&message=Top%20up%20VPN%20minutes"));
         for bad in ["", ".5", "1.", "1e3", "-1", "0.1234567"] {
-            assert!(solana_pay_url("R", bad, "Ref").is_err(), "{bad}");
+            assert!(solana_pay_url("R", bad, "M", "Ref").is_err(), "{bad}");
         }
     }
 
@@ -298,7 +330,7 @@ mod tests {
             let url = "http://127.0.0.1:8443";
             let att = attest::verify(url, "").await.unwrap();
             let key = x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(rand::random::<[u8; 32]>()));
-            let s = open_session(url, &B64.encode(key.as_bytes()), &bs58::encode([rand::random::<[u8; 32]>(), rand::random()].concat()).into_string()).await.unwrap();
+            let s = open_session(url, &B64.encode(key.as_bytes()), &B64.encode(rand::random::<[u8; 32]>())).await.unwrap();
             assert_eq!(s.dns, "10.8.0.1");
 
             print!("{}", wg_config(&B64.encode([7u8; 32]), &s, &att.wg_pubkey, &att.endpoint));
