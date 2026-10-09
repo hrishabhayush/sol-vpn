@@ -10,6 +10,7 @@ Change this file only together with every side that depends on it.
 ## Node HTTP API (port 8443, plain HTTP — not TLS; the attested WG key is the binding)
 
 `node_id` = the node's index in NodeRegistry (u8, 0..N-1). Each node also has a Solana keypair (its authority: registers, submits redeem, receives payouts).
+NodeRegistry.endpoint = node IP/host; app uses http://<endpoint>:8443 for the API and <endpoint>:51820 for WireGuard.
 The WG key is regenerated every boot, so it is NOT stored in the registry; the app trusts the attested key.
 
 ### GET /attest?nonce=<hex32>
@@ -56,7 +57,7 @@ Client AllowedIPs = 0.0.0.0/0, ::/0 (tunnel is IPv4-only; this blackholes IPv6 i
 Subnet 10.8.0.0/24, node 10.8.0.1 (also DNS resolver), UDP 51820.
 
 ## Measurement (see node/README.md)
-NodeRegistry.expected_measurement (48 bytes):
+NodeRegistry.expected_measurement (48 raw bytes, compared bytewise):
 - TDX: SHA-384(MRTD || RTMR3). Quote v4 offsets: MRTD [184..232), RTMR3 [520..568), REPORTDATA [568..632), TDATTRIBUTES [168..176) bit 0 must be 0.
   Expected RTMR3 = output of `node node/deploy/expected-rtmr3.ts` on the trusted commit (hashes node/package.json + node/src/**).
 - SNP (fallback, firmware only): SHA-384(MEASUREMENT [0x90..0xC0)); reject if POLICY (0x08) bit 19 set.
