@@ -1,0 +1,6 @@
+/* Placeholder styling; real design comes later. */
+body { margin: 0; font: 13px -apple-system, sans-serif; background: #fff; color: #111; }
+main { padding: 12px; }
+button, select, input { font: inherit; width: 100%; margin: 4px 0; box-sizing: border-box; }
+.err { color: #b00; word-break: break-word; }
+.small { font-size: 11px; color: #666; word-break: break-all; }
