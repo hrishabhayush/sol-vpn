@@ -17,26 +17,56 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-/// Read a secret from the macOS Keychain (service "sol-vpn"), creating it with `init` if missing.
-fn keychain(name: &str, init: impl FnOnce() -> Vec<u8>) -> R<Vec<u8>> {
-    let entry = keyring::Entry::new("sol-vpn", name).map_err(err)?;
-    match entry.get_secret() {
-        Ok(s) => Ok(s),
-        Err(keyring::Error::NoEntry) => {
-            let s = init();
-            entry.set_secret(&s).map_err(err)?;
-            Ok(s)
-        }
-        Err(e) => Err(err(e)),
+/// App secrets: wallet keypair (64 bytes, secret || pubkey) || ledger slot secret (32 bytes).
+/// Loaded once per launch from ONE Keychain item, so a release build prompts at most once.
+/// Debug builds use a 0600 file instead: every rebuild is a new unsigned binary, which the
+/// Keychain treats as a new app and re-prompts for.
+fn secrets() -> R<[u8; 96]> {
+    static CACHE: std::sync::Mutex<Option<[u8; 96]>> = std::sync::Mutex::new(None);
+    let mut c = CACHE.lock().map_err(err)?;
+    if c.is_none() {
+        *c = Some(load_or_create_secrets()?);
     }
+    Ok(c.unwrap())
 }
 
-/// App wallet as a Solana 64-byte keypair (secret || pubkey).
+fn load_or_create_secrets() -> R<[u8; 96]> {
+    let fresh = || {
+        let mut s = [0u8; 96];
+        s[..64].copy_from_slice(&ed25519_dalek::SigningKey::from_bytes(&rand::random()).to_keypair_bytes());
+        s[64..].copy_from_slice(&rand::random::<[u8; 32]>());
+        s
+    };
+    let bytes = if cfg!(debug_assertions) {
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = PathBuf::from(std::env::var("HOME").map_err(err)?).join(".sol-vpn-dev-secrets");
+        match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let s = fresh();
+                let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path).map_err(err)?;
+                std::io::Write::write_all(&mut f, &s).map_err(err)?;
+                s.to_vec()
+            }
+            Err(e) => return Err(err(e)),
+        }
+    } else {
+        let entry = keyring::Entry::new("sol-vpn", "secrets").map_err(err)?;
+        match entry.get_secret() {
+            Ok(b) => b,
+            Err(keyring::Error::NoEntry) => {
+                let s = fresh();
+                entry.set_secret(&s).map_err(err)?;
+                s.to_vec()
+            }
+            Err(e) => return Err(err(e)),
+        }
+    };
+    bytes.try_into().map_err(|_| "corrupt secrets (expected 96 bytes)".to_string())
+}
+
 fn wallet_pubkey() -> R<String> {
-    let kp = keychain("wallet", || {
-        ed25519_dalek::SigningKey::from_bytes(&rand::random()).to_keypair_bytes().to_vec()
-    })?;
-    Ok(bs58::encode(&kp[32..]).into_string())
+    Ok(bs58::encode(&secrets()?[32..64]).into_string())
 }
 
 #[tauri::command]
@@ -52,7 +82,7 @@ fn wallet_address() -> R<String> {
 /// Ledger slot secret (hex), handed to the TS ledger client for Arcium encryption.
 #[tauri::command]
 fn slot_secret() -> R<String> {
-    keychain("slot-secret", || rand::random::<[u8; 32]>().to_vec()).map(hex::encode)
+    Ok(hex::encode(&secrets()?[64..]))
 }
 
 #[derive(Serialize)]
@@ -143,10 +173,8 @@ async fn open_session(node_url: &str, client_wg_pubkey: &str, reserve_tx: &str) 
 async fn connect(app: AppHandle, node_url: String, server_pubkey: String, endpoint: String, reserve_tx: String) -> R<Session> {
     let secret = x25519_dalek::StaticSecret::from(rand::random::<[u8; 32]>());
     let public = x25519_dalek::PublicKey::from(&secret);
+    // Per-connection key; it only needs to live in the 0600 wg config below.
     let private_key = B64.encode(secret.to_bytes());
-    keyring::Entry::new("sol-vpn", "wg-private-key")
-        .and_then(|e| e.set_password(&private_key))
-        .map_err(err)?;
 
     let s = open_session(&node_url, &B64.encode(public.as_bytes()), &reserve_tx).await?;
 

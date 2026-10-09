@@ -11,7 +11,7 @@ cd src-tauri && cargo test -- --include-ignored   # ignored tests need the mock 
 ```
 
 - Tray icon only (no Dock icon); click it to open the popover, it hides on blur.
-- Secrets live in the macOS Keychain, service `sol-vpn`: `wallet`, `slot-secret`, `wg-private-key`.
+- Secrets (wallet keypair + ledger slot secret) live in one Keychain item `sol-vpn`/`secrets` in release builds, read once per launch. Debug builds use `~/.sol-vpn-dev-secrets` (0600) to avoid Keychain prompts on every rebuild.
 - WireGuard config: `~/Library/Application Support/com.solvpn.app/solvpn.conf` (0600, deleted on disconnect).
 - TDX collateral comes from `PCCS_URL` (default Phala PCCS); SNP VCEK from AMD KDS.
 - `src/ledger.ts` is a mock until ledger/client lands. `tee:"mock"` is only accepted in debug builds.
