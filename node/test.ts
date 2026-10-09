@@ -19,7 +19,7 @@ const call = async (path: string, body?: object) => {
   return [r.status, await r.json()] as const;
 };
 const clientPk = Buffer.from(generateKeyPairSync('x25519').publicKey.export({ format: 'jwk' }).x!, 'base64url').toString('base64');
-const tx = '5'.repeat(88);
+const reserve = Buffer.alloc(144, 7).toString('base64');
 
 try {
   const nonce = randomBytes(32);
@@ -32,15 +32,15 @@ try {
   assert.equal(a.report, expected, 'report_data = SHA-512(wg_pubkey || nonce)');
   assert.equal((await call('/attest?nonce=abc'))[0], 400);
 
-  assert.equal((await call('/session', { client_wg_pubkey: 'x', reserve_tx: tx }))[0], 400);
-  assert.equal((await call('/session', { client_wg_pubkey: clientPk, reserve_tx: 'xxx' + tx.slice(3) }))[0], 402);
-  const [s2, sess] = await call('/session', { client_wg_pubkey: clientPk, reserve_tx: tx });
+  assert.equal((await call('/session', { client_wg_pubkey: 'x', reserve }))[0], 400);
+  assert.equal((await call('/session', { client_wg_pubkey: clientPk, reserve: 'xxx' + reserve.slice(3) }))[0], 402);
+  const [s2, sess] = await call('/session', { client_wg_pubkey: clientPk, reserve });
   assert.equal(s2, 200);
   assert.equal(sess.client_ip, '10.8.0.2/32');
   assert.equal(sess.dns, '10.8.0.1');
   assert.match(sess.session_id, /^[0-9a-f]{32}$/);
   assert.ok(sess.expires_at - Date.now() / 1000 > 3500);
-  assert.equal((await call('/session', { client_wg_pubkey: clientPk, reserve_tx: tx }))[0], 409, 'reserve replay');
+  assert.equal((await call('/session', { client_wg_pubkey: clientPk, reserve }))[0], 409, 'reserve replay');
 
   const vurl = `/session/${sess.session_id}/voucher`;
   const [s3, v] = await call(vurl, { voucher: 'ZW5j', minutes: 1, counter: 1 });

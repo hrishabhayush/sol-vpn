@@ -1,6 +1,7 @@
 # sol-vpn node daemon
 
-TypeScript on Node 24 (native type stripping, zero deps). API in `../docs/protocol.md`.
+TypeScript on Node 24 (native type stripping). API in `../docs/protocol.md`. Mock mode has zero deps; the real
+ledger (`src/ledger.ts` -> `../ledger/client`) is bundled with esbuild into one file, `dist/main.cjs`.
 
 ## Local (macOS, mock mode)
 
@@ -11,11 +12,24 @@ node test.ts                # end-to-end check against a mock instance
 ```
 
 Mock `/attest` returns `report` = the raw 64-byte `report_data`, so debug builds can still check the
-SHA-512(wg_pubkey || nonce) binding. Mock ledger (`src/ledger.ts`): any reserve_tx is valid for
+SHA-512(wg_pubkey || nonce) binding. Mock ledger (`src/ledger.ts`): any reserve input is valid for
 `MOCK_RESERVE_MINUTES` (default 60) except ones starting with `xxx`.
 
+## Real ledger
+
+```sh
+(cd ../ledger && yarn install --frozen-lockfile)   # deps come from ledger/node_modules
+npm run build                                      # -> dist/main.cjs (src + ledger/client + deps + ledger/devnet.json)
+NODE_KEYPAIR=node-keypair.json NODE_ID=0 NODE_ENDPOINT=<ip>:51820 node dist/main.cjs   # Linux, root (wg/ip)
+```
+
+POST /session submits `reserve` with the node keypair (it pays the fee) and waits for `{ok, minutes}`;
+ended sessions are redeemed with the same keypair (failed txs are retried every second).
+rpc/programId come from `ledger/devnet.json`, baked into the bundle at build time (so it is measured);
+`LEDGER_CONFIG=<path>` overrides it at runtime (unmeasured, for localnet testing only).
+
 Env: `PORT` (8443), `NODE_ENDPOINT` (`<public ip>:51820`), `NODE_ID` (NodeRegistry index u8, mock default 0),
-`NODE_KEYPAIR` (path to the Solana authority keypair that signs redeem), `VOUCHER_TIMEOUT_S` (90).
+`NODE_KEYPAIR` (path to the Solana authority keypair that signs and pays reserve + redeem), `VOUCHER_TIMEOUT_S` (90).
 Required outside mock: `NODE_ENDPOINT`, `NODE_ID`, `NODE_KEYPAIR`.
 
 ## Deploy to a GCP confidential VM (not executed; costs money)
@@ -44,13 +58,17 @@ gcloud compute instances create sol-vpn-node-1 \
   --metadata=node-id=0 \
   --metadata-from-file=startup-script=node/deploy/startup.sh
 
-# then ship the code + the node's Solana authority keypair (signs redeem) and reboot.
-# The startup script measures the code into RTMR3 and starts the daemon. After any code change, reboot
-# (RTMR3 resets to zero only on boot).
-gcloud compute scp --zone=us-central1-a --recurse node sol-vpn-node-1:/tmp/node
-gcloud compute scp --zone=us-central1-a node-keypair.json sol-vpn-node-1:/tmp/node/node-keypair.json
-gcloud compute ssh --zone=us-central1-a sol-vpn-node-1 -- \
-  'sudo mkdir -p /opt/sol-vpn && sudo rm -rf /opt/sol-vpn/node && sudo mv /tmp/node/node-keypair.json /opt/sol-vpn/ && sudo chmod 600 /opt/sol-vpn/node-keypair.json && sudo mv /tmp/node /opt/sol-vpn/ && sudo reboot'
+# then build, ship the bundle + measuring script + the node's Solana authority keypair, and reboot.
+# The startup script measures dist/main.cjs into RTMR3 and starts it. After any code change, rebuild and
+# reboot (RTMR3 resets to zero only on boot). If startup.sh changed, push it first:
+#   gcloud compute instances add-metadata sol-vpn-node-1 --zone=us-central1-a --metadata-from-file=startup-script=node/deploy/startup.sh
+(cd node && npm run build && node deploy/expected-rtmr3.ts)
+gcloud compute ssh --quiet --zone=us-central1-a sol-vpn-node-1 -- 'rm -rf /tmp/node && mkdir -p /tmp/node/dist /tmp/node/deploy'
+gcloud compute scp --quiet --zone=us-central1-a node/dist/main.cjs sol-vpn-node-1:/tmp/node/dist/
+gcloud compute scp --quiet --zone=us-central1-a node/deploy/expected-rtmr3.ts sol-vpn-node-1:/tmp/node/deploy/
+gcloud compute scp --quiet --zone=us-central1-a node/node-keypair.json sol-vpn-node-1:/tmp/node-keypair.json
+gcloud compute ssh --quiet --zone=us-central1-a sol-vpn-node-1 -- \
+  'sudo mkdir -p /opt/sol-vpn && sudo rm -rf /opt/sol-vpn/node && sudo mv /tmp/node-keypair.json /opt/sol-vpn/ && sudo chmod 600 /opt/sol-vpn/node-keypair.json && sudo mv /tmp/node /opt/sol-vpn/ && sudo chown -R root:root /opt/sol-vpn && sudo systemctl reboot'
 ```
 
 AMD SEV-SNP alternative: replace the machine/confidential flags with
@@ -78,15 +96,15 @@ which GCP provides (it's what go-tdx-guest uses there).
 
 TDX (Quote v4, byte offsets into the raw quote, 48 B each unless noted):
 - `MRTD` [184..232) == the registered firmware value.
-- `RTMR3` [520..568) == output of `node node/deploy/expected-rtmr3.ts`, run on a clean checkout of
-  the commit you trust. Currently
-  `85a1869759f86930ffae28ceed67c546167905380bf81d18e3fb7053edadbdcc446210f6599b7d8c8a48092df426a2d4`;
-  this changes with any edit to `package.json` or `src/`.
+- `RTMR3` [520..568) == output of `npm run build && node deploy/expected-rtmr3.ts` in `node/`, on a clean
+  checkout of the commit you trust with `ledger/` deps installed from `yarn.lock` (`yarn install --frozen-lockfile`).
+  The bundle pins esbuild 0.28.2; it changes with any edit to `src/`, `ledger/client`, `ledger/devnet.json` or `ledger/yarn.lock`.
 - `REPORTDATA` [568..632) (64 B) == SHA-512(wg_pubkey || nonce).
 - `TDATTRIBUTES` [168..176) bit 0 (DEBUG) must be 0.
 
 How RTMR3 is computed:
-- `digest` = SHA-384 over `"<path>\n<sha384 hex>\n"` for `package.json` and `src/**`, in byte-sorted path order.
+- `digest` = SHA-384(`"dist/main.cjs\n<sha384 hex of dist/main.cjs>\n"`). The bundle is the only file systemd runs
+  (`node /opt/sol-vpn/node/dist/main.cjs`, no `node_modules`). Not measured: the keypair (secret) and `LEDGER_CONFIG` if set.
 - RTMR3 starts at 48 zero bytes on each boot. The startup script extends it once, before starting the
   daemon: RTMR3 = SHA-384(0^48 || digest).
 - Mechanism: a 48-byte write to `/sys/devices/virtual/misc/tdx_guest/measurements/rtmr3:sha384`

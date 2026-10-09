@@ -55,14 +55,14 @@ After=network-online.target
 Environment=NODE_ENDPOINT=$EXT_IP:51820
 Environment=NODE_ID=$NODE_ID
 Environment=NODE_KEYPAIR=/opt/sol-vpn/node-keypair.json
-ExecStart=/usr/local/bin/node /opt/sol-vpn/node/src/main.ts
+ExecStart=/usr/local/bin/node /opt/sol-vpn/node/dist/main.cjs
 Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload   # not enabled: only started below, after the code is measured into RTMR3
-[ -f /opt/sol-vpn/node/src/main.ts ] || { echo "daemon code not present yet; copy it and reboot"; exit 0; }
-# TDX: measure the daemon code into RTMR3 (kernel >= 6.16). set -e: extend fails -> daemon not started.
+[ -f /opt/sol-vpn/node/dist/main.cjs ] || { echo "daemon code not present yet; copy it and reboot"; exit 0; }
+# TDX: measure the daemon bundle (the only code ExecStart runs) into RTMR3 (kernel >= 6.16). set -e: extend fails -> daemon not started.
 # SEV-SNP has no RTMRs; it runs with firmware-only measurement.
 [ -e /dev/tdx_guest ] && node /opt/sol-vpn/node/deploy/expected-rtmr3.ts --extend
 systemctl restart sol-vpn-node

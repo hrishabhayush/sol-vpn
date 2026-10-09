@@ -71,7 +71,7 @@ async function endSession(id: string, s: Session) {
 
 async function flushRedeems() {
   for (const v of pendingRedeems.splice(0)) {
-    try { await ledger.redeem(v, NODE_ID); console.log('redeem ok'); }
+    try { console.log((await ledger.redeem(v, NODE_ID)) ? 'redeem ok' : 'redeem rejected'); }
     catch (e) { pendingRedeems.push(v); console.error('redeem failed, will retry:', (e as Error).message); }
   }
 }
@@ -97,20 +97,18 @@ async function handle(method: string, url: URL, body: any): Promise<[number, obj
   }
 
   if (method === 'POST' && url.pathname === '/session') {
-    const { client_wg_pubkey: pk, reserve_tx: tx } = body ?? {};
+    const { client_wg_pubkey: pk, reserve } = body ?? {};
     if (!isB64Key(pk) || pk === wgPubB64) return [400, { error: 'bad client_wg_pubkey' }];
-    if (typeof tx !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,90}$/.test(tx)) return [400, { error: 'bad reserve_tx' }];
-    if (usedReserves.has(tx)) return [409, { error: 'reserve already used' }];
+    if (typeof reserve !== 'string' || reserve.length > 4096 || !/^[A-Za-z0-9+/]+={0,2}$/.test(reserve)) return [400, { error: 'bad reserve' }];
+    if (usedReserves.has(reserve)) return [409, { error: 'reserve already used' }];
     if ([...sessions.values()].some((s) => s.pubkey === pk)) return [409, { error: 'pubkey has an active session' }];
+    usedReserves.add(reserve); // before the await, so concurrent replays lose; never removed (client re-encrypts to retry)
+    const r = await ledger.submitReserve(reserve, NODE_ID).catch((e) => (console.error('reserve failed:', (e as Error).message), { ok: false, minutes: 0 }));
+    if (!r.ok || r.minutes <= 0) return [402, { error: 'reserve failed' }];
+    // Allocate after the (seconds-long) await so concurrent sessions can't get the same IP.
     const used = new Set([...sessions.values()].map((s) => s.octet));
     const octet = [...Array(253).keys()].map((i) => i + 2).find((o) => !used.has(o));
-    if (!octet) return [503, { error: 'node full' }];
-    usedReserves.add(tx); // before the await, so concurrent replays lose
-    const r = await ledger.verifyReserve(tx, NODE_ID).catch(() => ({ ok: false, minutes: 0 }));
-    if (!r.ok || r.minutes <= 0) {
-      usedReserves.delete(tx); // allow retry, e.g. tx not yet confirmed
-      return [402, { error: 'reserve not valid for this node' }];
-    }
+    if (!octet) return [503, { error: 'node full' }]; // ponytail: reserved minutes are lost; node full is ~never
     const id = randomBytes(16).toString('hex');
     const t = now();
     const s: Session = { pubkey: pk, octet, start: t, expiresAt: t + r.minutes * 60, lastVoucherAt: t, minutes: 0, counter: -1 };
