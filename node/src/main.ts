@@ -30,7 +30,8 @@ const wgPubB64 = wgPub.toString('base64');
 if (!MOCK) try { execFileSync('ip', ['link', 'del', 'wg0'], { stdio: 'ignore' }); } catch {}
 run('ip', ['link', 'add', 'wg0', 'type', 'wireguard']);
 run('ip', ['address', 'add', '10.8.0.1/24', 'dev', 'wg0']);
-run('wg', ['set', 'wg0', 'listen-port', '51820', 'private-key', '/dev/stdin'], wgPriv.toString('base64'));
+// Node hands children a socket, not a pipe, as stdin; wg can't fopen that as /dev/stdin. <(cat) is a real pipe.
+run('bash', ['-c', 'wg set wg0 listen-port 51820 private-key <(cat)'], wgPriv.toString('base64'));
 run('ip', ['link', 'set', 'wg0', 'up']);
 
 function attest(nonce: Buffer) {
