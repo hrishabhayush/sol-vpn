@@ -6,7 +6,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use arcium_anchor::prelude::*;
-use arcium_client::idl::arcium::types::CallbackAccount;
+use arcium_client::idl::arcium::types::{CallbackAccount, CircuitSource, OffChainCircuitSource};
+use arcium_macros::circuit_hash;
 
 const COMP_DEF_OFFSET_INIT_LEDGER: u32 = comp_def_offset("init_ledger");
 const COMP_DEF_OFFSET_DEPOSIT: u32 = comp_def_offset("deposit");
@@ -32,20 +33,22 @@ pub mod ledger {
     use super::*;
 
     // ---------- comp def init (once after deploy) ----------
-    pub fn init_init_ledger_comp_def(ctx: Context<InitInitLedgerCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)
+    // url = Some(public .arcis URL) stores the circuit off-chain (devnet: ~4.6 MB on-chain is ~32 SOL rent);
+    // None = upload on-chain via uploadCircuit (localnet tests).
+    pub fn init_init_ledger_comp_def(ctx: Context<InitInitLedgerCompDef>, url: Option<String>) -> Result<()> {
+        init_computation_def(ctx.accounts, offchain(url, circuit_hash!("init_ledger")))
     }
-    pub fn init_deposit_comp_def(ctx: Context<InitDepositCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)
+    pub fn init_deposit_comp_def(ctx: Context<InitDepositCompDef>, url: Option<String>) -> Result<()> {
+        init_computation_def(ctx.accounts, offchain(url, circuit_hash!("deposit")))
     }
-    pub fn init_reserve_comp_def(ctx: Context<InitReserveCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)
+    pub fn init_reserve_comp_def(ctx: Context<InitReserveCompDef>, url: Option<String>) -> Result<()> {
+        init_computation_def(ctx.accounts, offchain(url, circuit_hash!("reserve")))
     }
-    pub fn init_redeem_comp_def(ctx: Context<InitRedeemCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)
+    pub fn init_redeem_comp_def(ctx: Context<InitRedeemCompDef>, url: Option<String>) -> Result<()> {
+        init_computation_def(ctx.accounts, offchain(url, circuit_hash!("redeem")))
     }
-    pub fn init_settle_comp_def(ctx: Context<InitSettleCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)
+    pub fn init_settle_comp_def(ctx: Context<InitSettleCompDef>, url: Option<String>) -> Result<()> {
+        init_computation_def(ctx.accounts, offchain(url, circuit_hash!("settle")))
     }
 
     // ---------- setup ----------
@@ -108,6 +111,12 @@ pub mod ledger {
         n.endpoint = endpoint;
         c.node_count += 1;
         emit!(NodeRegistered { node_id: n.id, authority: n.authority });
+        Ok(())
+    }
+
+    /// Node code changed => new measurement. Signer = node authority.
+    pub fn set_measurement(ctx: Context<SetMeasurement>, _node_id: u8, expected_measurement: [u8; 48]) -> Result<()> {
+        ctx.accounts.node.expected_measurement = expected_measurement;
         Ok(())
     }
 
@@ -198,7 +207,7 @@ pub mod ledger {
     }
 
     // ---------- reserve ----------
-    /// Any signer may pay; use a wallet unlinked to the depositor for privacy.
+    /// Signer = node authority, so only the named node can submit (and replay) a user's reserve input.
     pub fn reserve(
         ctx: Context<Reserve>,
         computation_offset: u64,
@@ -209,7 +218,6 @@ pub mod ledger {
         pubkey: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
-        require!(node_id < ctx.accounts.config.node_count, LedgerError::UnknownNode);
         let ledger = ctx.accounts.ledger.key();
         let l = &mut ctx.accounts.ledger;
         require!(!l.busy, LedgerError::Busy);
@@ -351,6 +359,10 @@ pub mod ledger {
         emit!(Claimed { node_id, payout: gross - fee, fee });
         Ok(())
     }
+}
+
+fn offchain(url: Option<String>, hash: [u8; 32]) -> Option<CircuitSource> {
+    url.map(|source| CircuitSource::OffChain(OffChainCircuitSource { source, hash }))
 }
 
 fn writable(pubkey: Pubkey) -> CallbackAccount {
@@ -514,6 +526,14 @@ pub struct RegisterNode<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(node_id: u8)]
+pub struct SetMeasurement<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [b"node".as_ref(), &[node_id]], bump, has_one = authority @ LedgerError::NotNodeAuthority)]
+    pub node: Box<Account<'info, Node>>,
+}
+
 #[queue_computation_accounts("deposit", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
@@ -582,7 +602,7 @@ pub struct DepositCallback<'info> {
 
 #[queue_computation_accounts("reserve", payer)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64)]
+#[instruction(computation_offset: u64, node_id: u8)]
 pub struct Reserve<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -609,8 +629,8 @@ pub struct Reserve<'info> {
     pub clock_account: Box<Account<'info, ClockAccount>>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
-    #[account(seeds = [b"config"], bump = config.bump)]
-    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"node".as_ref(), &[node_id]], bump, constraint = node.authority == payer.key() @ LedgerError::NotNodeAuthority)]
+    pub node: Box<Account<'info, Node>>,
     #[account(mut, seeds = [b"ledger"], bump)]
     pub ledger: Box<Account<'info, Ledger>>,
     #[account(init, payer = payer, space = Reservation::SPACE, seeds = [b"resv".as_ref(), &computation_offset.to_le_bytes()], bump)]
@@ -830,8 +850,6 @@ pub enum LedgerError {
     Busy,
     #[msg("Amount must be a positive multiple of the per-minute price")]
     BadAmount,
-    #[msg("Unknown node")]
-    UnknownNode,
     #[msg("Signer is not the node authority")]
     NotNodeAuthority,
     #[msg("Node registry full")]

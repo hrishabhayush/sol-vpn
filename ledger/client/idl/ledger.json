@@ -450,7 +450,14 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "init_init_ledger_comp_def",
@@ -495,7 +502,14 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "init_ledger_callback",
@@ -614,7 +628,14 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "init_reserve_comp_def",
@@ -659,7 +680,14 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "init_settle_comp_def",
@@ -704,7 +732,14 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -1173,7 +1208,7 @@
     {
       "name": "reserve",
       "docs": [
-        "Any signer may pay; use a wallet unlinked to the depositor for privacy."
+        "Signer = node authority, so only the named node can submit (and replay) a user's reserve input."
       ],
       "discriminator": [
         92,
@@ -1264,22 +1299,7 @@
           "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
+          "name": "node"
         },
         {
           "name": "ledger",
@@ -1447,6 +1467,50 @@
                 }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_measurement",
+      "docs": [
+        "Node code changed => new measurement. Signer = node authority."
+      ],
+      "discriminator": [
+        0,
+        124,
+        127,
+        65,
+        251,
+        10,
+        66,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "node"
+          ]
+        },
+        {
+          "name": "node",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_node_id",
+          "type": "u8"
+        },
+        {
+          "name": "expected_measurement",
+          "type": {
+            "array": [
+              "u8",
+              48
+            ]
           }
         }
       ]
@@ -1823,21 +1887,16 @@
     },
     {
       "code": 6002,
-      "name": "UnknownNode",
-      "msg": "Unknown node"
-    },
-    {
-      "code": 6003,
       "name": "NotNodeAuthority",
       "msg": "Signer is not the node authority"
     },
     {
-      "code": 6004,
+      "code": 6003,
       "name": "RegistryFull",
       "msg": "Node registry full"
     },
     {
-      "code": 6005,
+      "code": 6004,
       "name": "EndpointTooLong",
       "msg": "Endpoint too long"
     }

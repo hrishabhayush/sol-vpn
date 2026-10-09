@@ -8,12 +8,15 @@ skip-lint = false
 [programs.localnet]
 ledger = "3QuVNKcmcHcHcirr3u4c8a8wCT9g2bWR4CaSdQwgwvnw"
 
+[programs.devnet]
+ledger = "3QuVNKcmcHcHcirr3u4c8a8wCT9g2bWR4CaSdQwgwvnw"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+test = "node --test --test-timeout=1000000 tests/ledger.ts"
 
 [hooks]
 

@@ -456,7 +456,14 @@ export type Ledger = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initInitLedgerCompDef",
@@ -501,7 +508,14 @@ export type Ledger = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initLedgerCallback",
@@ -620,7 +634,14 @@ export type Ledger = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initReserveCompDef",
@@ -665,7 +686,14 @@ export type Ledger = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initSettleCompDef",
@@ -710,7 +738,14 @@ export type Ledger = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -1179,7 +1214,7 @@ export type Ledger = {
     {
       "name": "reserve",
       "docs": [
-        "Any signer may pay; use a wallet unlinked to the depositor for privacy."
+        "Signer = node authority, so only the named node can submit (and replay) a user's reserve input."
       ],
       "discriminator": [
         92,
@@ -1270,22 +1305,7 @@ export type Ledger = {
           "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
+          "name": "node"
         },
         {
           "name": "ledger",
@@ -1453,6 +1473,50 @@ export type Ledger = {
                 }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "setMeasurement",
+      "docs": [
+        "Node code changed => new measurement. Signer = node authority."
+      ],
+      "discriminator": [
+        0,
+        124,
+        127,
+        65,
+        251,
+        10,
+        66,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "node"
+          ]
+        },
+        {
+          "name": "node",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "nodeId",
+          "type": "u8"
+        },
+        {
+          "name": "expectedMeasurement",
+          "type": {
+            "array": [
+              "u8",
+              48
+            ]
           }
         }
       ]
@@ -1829,21 +1893,16 @@ export type Ledger = {
     },
     {
       "code": 6002,
-      "name": "unknownNode",
-      "msg": "Unknown node"
-    },
-    {
-      "code": 6003,
       "name": "notNodeAuthority",
       "msg": "Signer is not the node authority"
     },
     {
-      "code": 6004,
+      "code": 6003,
       "name": "registryFull",
       "msg": "Node registry full"
     },
     {
-      "code": 6005,
+      "code": 6004,
       "name": "endpointTooLong",
       "msg": "Endpoint too long"
     }
