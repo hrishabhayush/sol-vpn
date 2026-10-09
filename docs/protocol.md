@@ -44,13 +44,15 @@ Sent every minute with minutes = elapsed whole minutes + 1; each replaces the pr
 Errors: 402 if minutes < floor(elapsed_s/60), 409 stale counter, 404 unknown/ended session. Peer removed when no voucher arrives for 90 s or reserve runs out.
 Node submits `redeem(latest voucher)` when the session ends.
 
-## Ledger (owned by ledger/, see docs/ledger.md once written)
+## Ledger (owned by ledger/, client API in ledger/README.md; TS package is @anchor-lang/core)
 - Token price: 1 minute = 10_000 USDC base units ($0.01). Devnet USDC mint configurable.
-- deposit(amount, Enc(slot, secret))
-- reserve(Enc(slot, secret, minutes), node_id) -> public {ok: bool, minutes: u32}, readable by the node from the reserve tx
-- redeem(Enc voucher {slot, secret, total_minutes, counter, node_id}) -> refund rest of reserve to slot
-- settle() -> reveal per-node totals, pay vault -> nodes, fee 12% -> treasury
-- register_node(endpoint, tee, expected_measurement[48]) -> node_id; signer = node authority (payout address)
+- 16 slots (Arcium callback size limit) — anonymity set is 16. User picks a random slot and a random nonzero u64 secret.
+- deposit(amount, Enc(slot, secret)) -> ok=false means slot taken, funds refunded; retry another slot.
+- reserve(Enc(slot, secret, minutes), node_id) -> public {ok, minutes} in the Reservation account named in the reserve tx (verifyReserve); lands a few seconds after the tx. One open reservation per slot; max 65_535 minutes.
+- redeem(Enc voucher {slot, secret, total_minutes, counter, node_id}); signer = node authority. Counter strictly increases per slot for the slot's whole lifetime.
+- settle() reveals cumulative per-node totals; claim(node_id) pays the difference: 88% node, 12% treasury.
+- register_node(endpoint, tee 0 mock/1 tdx/2 sev-snp, expected_measurement[48]) -> node_id; signer = node authority (payout address)
+- Privacy: reserve must be paid by a wallet not linked to the depositing wallet (relayer or node), or deposit and reserve link on-chain.
 
 ## WireGuard
 Client AllowedIPs = 0.0.0.0/0, ::/0 (tunnel is IPv4-only; this blackholes IPv6 instead of leaking it).
