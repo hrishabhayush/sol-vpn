@@ -40,8 +40,15 @@ describe("ledger", () => {
     await L.initialize(program, mint, treasury);
     console.log(`    initialize: ${(Date.now() - t) / 1000}s`);
     mxeKey = await L.getMxeKey(program);
-    nodeId = await L.registerNode(as(nodeKp), "1.2.3.4:51820", 0, new Uint8Array(48));
+    nodeId = await L.registerNode(as(nodeKp), "1.2.3.4:51820", 0, new Uint8Array(48), "US", "Iowa");
     assert.equal(nodeId, 0);
+  });
+
+  it("register_node stores location, caps city length", async () => {
+    const n = await program.account.node.fetch(L.nodePda(program, nodeId));
+    assert.equal(Buffer.from(n.country).toString(), "US");
+    assert.equal(n.city, "Iowa");
+    await assert.rejects(L.registerNode(as(other), "5.6.7.8", 0, new Uint8Array(48), "DE", "x".repeat(25)), /CityTooLong/);
   });
 
   it("set_measurement: node authority only", async () => {

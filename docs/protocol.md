@@ -52,7 +52,7 @@ Node submits `redeem(latest voucher)` when the session ends.
 - reserve(Enc(slot, secret, minutes), node_id) -> public {ok, minutes} in the Reservation account named in the reserve tx (verifyReserve); lands a few seconds after the tx. One open reservation per slot; max 65_535 minutes.
 - redeem(Enc voucher {slot, secret, total_minutes, counter, node_id}); signer = node authority. Counter strictly increases per slot for the slot's whole lifetime.
 - settle() reveals cumulative per-node totals; claim(node_id) pays the difference: 88% node, 12% treasury.
-- register_node(endpoint, tee 0 mock/1 tdx/2 sev-snp, expected_measurement[48]) -> node_id; signer = node authority (payout address)
+- register_node(endpoint, tee 0 mock/1 tdx/2 sev-snp, expected_measurement[48], country[2] ISO 3166-1 alpha-2, city <= 24 bytes) -> node_id; signer = node authority (payout address)
 - Privacy: reserve and redeem are submitted by the node, never the user's wallet.
 - Devnet: program id, config, mint, MXE key in ledger/devnet.json (written by the deploy). Token = our own devnet test mint (6 decimals), not Circle USDC.
 

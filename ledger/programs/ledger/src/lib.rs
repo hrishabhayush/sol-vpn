@@ -100,8 +100,11 @@ pub mod ledger {
         endpoint: String,
         tee: u8,
         expected_measurement: [u8; 48],
+        country: [u8; 2],
+        city: String,
     ) -> Result<()> {
         require!(endpoint.len() <= 64, LedgerError::EndpointTooLong);
+        require!(city.len() <= 24, LedgerError::CityTooLong);
         let c = &mut ctx.accounts.config;
         let n = &mut ctx.accounts.node;
         n.authority = ctx.accounts.authority.key();
@@ -109,6 +112,8 @@ pub mod ledger {
         n.tee = tee;
         n.expected_measurement = expected_measurement;
         n.endpoint = endpoint;
+        n.country = country;
+        n.city = city;
         c.node_count += 1;
         emit!(NodeRegistered { node_id: n.id, authority: n.authority });
         Ok(())
@@ -433,9 +438,11 @@ pub struct Node {
     pub tee: u8, // 0 mock, 1 tdx, 2 sev-snp
     pub expected_measurement: [u8; 48],
     pub endpoint: String,
+    pub country: [u8; 2], // ISO 3166-1 alpha-2, e.g. b"US"
+    pub city: String,
 }
 impl Node {
-    pub const SPACE: usize = 8 + 32 + 2 + 48 + 4 + 64;
+    pub const SPACE: usize = 8 + 32 + 2 + 48 + 4 + 64 + 2 + 4 + 24;
 }
 
 /// Public reserve result, PDA ["resv", computation_offset LE]. Node reads it via the reserve tx.
@@ -856,4 +863,6 @@ pub enum LedgerError {
     RegistryFull,
     #[msg("Endpoint too long")]
     EndpointTooLong,
+    #[msg("City too long")]
+    CityTooLong,
 }

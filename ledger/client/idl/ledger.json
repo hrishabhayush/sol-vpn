@@ -1202,6 +1202,19 @@
               48
             ]
           }
+        },
+        {
+          "name": "country",
+          "type": {
+            "array": [
+              "u8",
+              2
+            ]
+          }
+        },
+        {
+          "name": "city",
+          "type": "string"
         }
       ]
     },
@@ -1899,6 +1912,11 @@
       "code": 6004,
       "name": "EndpointTooLong",
       "msg": "Endpoint too long"
+    },
+    {
+      "code": 6005,
+      "name": "CityTooLong",
+      "msg": "City too long"
     }
   ],
   "types": [
@@ -2784,6 +2802,19 @@
           },
           {
             "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "country",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "city",
             "type": "string"
           }
         ]

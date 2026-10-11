@@ -1208,6 +1208,19 @@ export type Ledger = {
               48
             ]
           }
+        },
+        {
+          "name": "country",
+          "type": {
+            "array": [
+              "u8",
+              2
+            ]
+          }
+        },
+        {
+          "name": "city",
+          "type": "string"
         }
       ]
     },
@@ -1905,6 +1918,11 @@ export type Ledger = {
       "code": 6004,
       "name": "endpointTooLong",
       "msg": "Endpoint too long"
+    },
+    {
+      "code": 6005,
+      "name": "cityTooLong",
+      "msg": "City too long"
     }
   ],
   "types": [
@@ -2790,6 +2808,19 @@ export type Ledger = {
           },
           {
             "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "country",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "city",
             "type": "string"
           }
         ]

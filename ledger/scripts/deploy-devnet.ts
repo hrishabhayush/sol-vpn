@@ -14,6 +14,8 @@ const NODE_KEYPAIR = new URL("../../node/node-keypair.json", import.meta.url);
 const NODE0 = {
   endpoint: "34.172.3.92",
   tee: 1, // tdx
+  country: "US", // GCP us-central1
+  city: "Iowa",
   measurement: Buffer.from("d83aa0c346c50864c816a1e36cb6169175223b38b2c5ae49ffc881a798345a44546eb6c59c1c004d49002d7bac78280c", "hex"),
 };
 const OUT = new URL("../devnet.json", import.meta.url);
@@ -45,7 +47,7 @@ if ((await conn.getBalance(nodeKp.publicKey)) < 0.4 * LAMPORTS_PER_SOL) {
   const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: nodeKp.publicKey, lamports: 0.5 * LAMPORTS_PER_SOL }));
   await sendAndConfirmTransaction(conn, tx, [admin]);
 }
-if (config.nodeCount === 0) await L.registerNode(as(nodeKp), NODE0.endpoint, NODE0.tee, NODE0.measurement);
+if (config.nodeCount === 0) await L.registerNode(as(nodeKp), NODE0.endpoint, NODE0.tee, NODE0.measurement, NODE0.country, NODE0.city);
 const nodeToken = (await getOrCreateAssociatedTokenAccount(conn, admin, config.mint, nodeKp.publicKey)).address;
 
 const mxe = await getArciumProgram(program.provider as anchor.AnchorProvider).account.mxeAccount.fetch(getMXEAccAddress(program.programId));

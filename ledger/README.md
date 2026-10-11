@@ -32,7 +32,7 @@ makeVoucher(mxeKey: Uint8Array, v: { slot, secret: bigint, totalMinutes, counter
   // counter must strictly increase per slot, across sessions, for the slot's lifetime
 
 // node
-registerNode(program, endpoint: string, tee: 0|1|2 /* mock|tdx|sev-snp */, expectedMeasurement: Uint8Array /*48*/): Promise<number /*node_id*/>
+registerNode(program, endpoint: string, tee: 0|1|2 /* mock|tdx|sev-snp */, expectedMeasurement: Uint8Array /*48*/, country: string /*"US"*/, city: string /*<=24 bytes*/): Promise<number /*node_id*/>
 setMeasurement(program, nodeId: number, expectedMeasurement: Uint8Array /*48*/): Promise<string>  // after node code changes
 submitReserve(program, inputB64: string, nodeId: number): Promise<{ reserveTx: string; ok: boolean; minutes: number }>  // signer = node authority
 verifyReserve(program, reserveTx: string, nodeId: number, timeoutMs?): Promise<{ ok: boolean; minutes: number }>

@@ -177,11 +177,18 @@ export async function initialize(program: Program<Ledger>, mint: PublicKey, trea
 
 // ---------------- node ----------------
 
-/** tee: 0 mock, 1 tdx, 2 sev-snp. Signer = node authority (payout owner). Returns node_id. */
-export async function registerNode(program: Program<Ledger>, endpoint: string, tee: number, expectedMeasurement: Uint8Array): Promise<number> {
+/** tee: 0 mock, 1 tdx, 2 sev-snp; country: ISO 3166-1 alpha-2 ("US"); city <= 24 bytes. Signer = node authority (payout owner). Returns node_id. */
+export async function registerNode(
+  program: Program<Ledger>,
+  endpoint: string,
+  tee: number,
+  expectedMeasurement: Uint8Array,
+  country: string,
+  city: string,
+): Promise<number> {
   const nodeId = (await program.account.config.fetch(configPda(program))).nodeCount;
   await program.methods
-    .registerNode(endpoint, tee, Array.from(expectedMeasurement))
+    .registerNode(endpoint, tee, Array.from(expectedMeasurement), Array.from(Buffer.from(country.toUpperCase(), "ascii")), city)
     .accountsPartial({ node: nodePda(program, nodeId) })
     .rpc({ commitment: "confirmed" });
   return nodeId;
