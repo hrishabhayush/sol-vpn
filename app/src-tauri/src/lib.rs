@@ -125,7 +125,8 @@ struct TopUp {
 fn topup(amount_usdc: String, mint: String) -> R<TopUp> {
     let reference = bs58::encode(rand::random::<[u8; 32]>()).into_string();
     let url = solana_pay_url(&wallet_pubkey()?, &amount_usdc, &mint, &reference)?;
-    let svg = qrcode::QrCode::new(&url)
+    // EcLevel H (30%): the popover draws the Wraps mark over the centre of the code.
+    let svg = qrcode::QrCode::with_error_correction_level(&url, qrcode::EcLevel::H)
         .map_err(err)?
         .render::<qrcode::render::svg::Color>()
         .min_dimensions(200, 200)
@@ -263,8 +264,9 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("sol-vpn")
+                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+                .icon_as_template(true)
+                .tooltip("Wraps")
                 .on_tray_icon_event(|tray, event| {
                     tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {

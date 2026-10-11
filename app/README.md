@@ -8,6 +8,8 @@ pnpm mock-node                     # node/ daemon in --mock mode on :8443 (separ
 SOLVPN_DRY_RUN=1 pnpm tauri dev    # dry run: writes the wg config, skips `wg-quick up`
 pnpm tauri dev                     # real: prompts for admin and brings the tunnel up
 cd src-tauri && cargo test -- --include-ignored   # ignored tests need the mock node running
+SOLVPN_DEVNET_JSON=/tmp/fake-devnet.json pnpm dev  # UI work before ledger/devnet.json exists
+# then http://localhost:1420/?state=home|servers|verifying|connected|refused|topup (dev-only preview, no Tauri needed)
 ```
 
 - Tray icon only (no Dock icon); click it to open the popover, it hides on blur.

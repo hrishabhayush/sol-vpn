@@ -8,8 +8,11 @@ export default defineConfig(() => ({
   // ledger/client (../ledger) is built for Node: shim its builtins and resolve its deps from app/node_modules.
   resolve: {
     alias: [
-      { find: /^(node:)?(crypto|fs)$/, replacement: "/src/node-shim.ts" },
-      { find: /^@anchor-lang\/core$/, replacement: "/src/anchor-shim.ts" },
+      // Absolute paths: the dep optimizer resolves "/src/..." relative to node_modules and fails.
+      { find: /^(node:)?(crypto|fs)$/, replacement: new URL("./src/node-shim.ts", import.meta.url).pathname },
+      { find: /^@anchor-lang\/core$/, replacement: new URL("./src/anchor-shim.ts", import.meta.url).pathname },
+      // UI work before the devnet deploy writes ledger/devnet.json: SOLVPN_DEVNET_JSON=/tmp/fake.json pnpm dev
+      ...(process.env.SOLVPN_DEVNET_JSON ? [{ find: /^.*\/ledger\/devnet\.json$/, replacement: process.env.SOLVPN_DEVNET_JSON }] : []),
     ],
     dedupe: ["@anchor-lang/core", "@arcium-hq/client", "@solana/web3.js", "@solana/spl-token", "buffer"],
   },
