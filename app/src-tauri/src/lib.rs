@@ -256,6 +256,20 @@ async fn send_voucher(node_url: String, session_id: String, voucher: String, min
     Ok(r.expires_at)
 }
 
+/// Round-trip to the node's API port: median of 3 HEADs in ms (any HTTP status counts), None if unreachable.
+#[tauri::command]
+async fn ping(node_url: String) -> Option<u64> {
+    let c = reqwest::Client::builder().timeout(std::time::Duration::from_secs(2)).build().ok()?;
+    let mut ms = Vec::new();
+    for _ in 0..3 {
+        let t = std::time::Instant::now();
+        c.head(&node_url).send().await.ok()?;
+        ms.push(t.elapsed().as_millis() as u64);
+    }
+    ms.sort();
+    Some(ms[1])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -298,7 +312,8 @@ pub fn run() {
             topup,
             connect,
             disconnect,
-            send_voucher
+            send_voucher,
+            ping
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

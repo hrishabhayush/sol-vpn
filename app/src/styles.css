@@ -79,7 +79,10 @@ main.hero { background: radial-gradient(ellipse 70% 50% at 50% 0, rgba(255, 255,
 .list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; margin: 0 -6px; padding: 2px 6px 24px; -webkit-mask-image: linear-gradient(#000 75%, transparent); }
 .srv { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 9px; border-radius: 999px; background: #fff; border: 1.5px solid transparent; box-shadow: 0 6px 9px rgba(79, 124, 240, 0.08); text-align: left; width: 100%; flex-shrink: 0; }
 .srv.on { border-color: rgba(79, 124, 240, 0.6); }
-.tee { width: 38px; height: 38px; border-radius: 19px; display: grid; place-items: center; background: linear-gradient(#4fd3f7, #4d8bef); color: #fff; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.flag { width: 38px; height: 38px; border-radius: 19px; overflow: hidden; display: grid; place-items: center; background: #eef2f8; color: var(--blue); font-size: 48px; line-height: 1; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.srv.off { opacity: 0.5; }
+.srv .sep { width: 1px; height: 11px; background: #d5dbe6; margin: 0 4px; }
+.srv small { font-size: 9px; font-weight: 600; letter-spacing: 0.3px; color: #a3abbb; margin-left: 4px; }
 .name { font-size: 15px; font-weight: 600; letter-spacing: -0.15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .go { width: 32px; height: 32px; border-radius: 16px; display: grid; place-items: center; border: 1.5px solid #e2e8f2; color: #c3cad8; flex-shrink: 0; }
 .srv.on .go { background: linear-gradient(#7fbdf6, #4f8ef0); border-color: transparent; color: #fff; box-shadow: 0 4px 8px rgba(79, 142, 240, 0.45); }

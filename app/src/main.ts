@@ -17,6 +17,7 @@ let minutesLeft = 0;
 let error = "";
 let attempt = 0; // bumped by Cancel; a stale connect() drops its result
 const verified = new Set<number>(); // node ids that passed attestation this launch
+const latency = new Map<number, number | null>(); // node id -> ms (null = unreachable), measured when the list opens
 let conn: { node: ledger.Node; att: Attested; session: Session; started: number; paid: number; timers: number[] } | null = null;
 
 // Icons from the Figma file (stroke = currentColor). [viewBox size, inner svg]
@@ -43,6 +44,14 @@ const mark = (size: number, white = false) =>
   }</linearGradient></defs><path d="${SWIRL}" stroke="url(#wm${white ? "w" : ""})" stroke-width="2.93" stroke-linecap="round"/></svg>`;
 
 const TEE = (t: string) => ({ tdx: "Intel TDX", "sev-snp": "AMD SEV-SNP", mock: "Mock TEE" })[t] ?? t;
+const regionName = new Intl.DisplayNames(["en"], { type: "region" });
+const iso = (n: ledger.Node) => (/^[A-Z]{2}$/.test(n.country) ? n.country : "");
+const country = (n: ledger.Node) => (iso(n) ? (regionName.of(iso(n)) ?? iso(n)) : "Unknown location");
+const place = (n: ledger.Node) => [n.city, country(n)].filter(Boolean).join(", ");
+// Flag emoji = the two regional indicator symbols for the ISO code.
+const flag = (n: ledger.Node) =>
+  `<span class="flag">${iso(n) ? String.fromCodePoint(...[...iso(n)].map((c) => 0x1f1a5 + c.charCodeAt(0))) : icon("globe", 18)}</span>`;
+const ms = (id: number) => (!latency.has(id) ? "…" : latency.get(id) === null ? "—" : `${latency.get(id)} ms`);
 const money = (minutes: number) => `$${(minutes / 100).toFixed(2)}`;
 const clock = (s: number) => [s / 3600, (s / 60) % 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, "0")).join(":");
 
@@ -109,10 +118,10 @@ const serverCard = (n: ledger.Node | undefined, live: boolean, stats: [string, s
   n
     ? `<button class="server" id="server">
         ${live ? `<span class="status"><span class="live"></span></span>` : ""}
-        <div class="col" style="gap:3px">
-          <p class="country">Node #${n.id}</p>
+        <div class="row" style="gap:12px">${flag(n)}<div class="col" style="gap:3px">
+          <p class="country">${esc(country(n))}</p>
           <div class="row meta">${verified.has(n.id) ? `<span class="badge">${icon("check", 10, 1.6)}Verified</span>` : ""}${esc(meta)}</div>
-        </div>
+        </div></div>
         <div class="divider"></div>
         <div class="stats">${stats.map(([ic, k, v]) => `<div class="row" style="gap:8px"><span class="stat-ico">${icon(ic, 14)}</span><div class="col"><span class="k">${k}</span><span class="v">${esc(v)}</span></div></div>`).join("")}</div>
       </button>`
@@ -135,7 +144,7 @@ function home() {
         <p class="title">Not connected</p>
         ${error ? `<p class="err">${esc(error)}</p>` : `<p class="muted">Tap to verify the server and connect</p>`}
       </div>
-      ${serverCard(node, false, [["shield", "Enclave", node ? TEE(node.tee) : ""], ["wallet", "Rate", "$0.01/min"]], node?.name ?? "")}
+      ${serverCard(node, false, [["shield", "Enclave", node ? TEE(node.tee) : ""], ["wallet", "Rate", "$0.01/min"]], node?.city ?? "")}
       ${nav("home")}`,
     ),
   );
@@ -152,13 +161,13 @@ function showServers() {
         nodes
           .map(
             (n) => `
-        <div class="srv ${n.id === picked ? "on" : ""}" data-id="${n.id}">
-          <span class="tee">${esc(n.tee === "sev-snp" ? "SNP" : n.tee.toUpperCase())}</span>
-          <div class="col" style="flex:1;gap:3px">
-            <div class="row"><span class="name">Node #${n.id}</span>${verified.has(n.id) ? `<span class="badge">${icon("check", 10, 1.6)}Verified</span>` : ""}</div>
-            <div class="row muted" style="font-size:12px;gap:4px"><span style="color:var(--blue)">${icon("bolt", 11)}</span>${esc(TEE(n.tee))}  ·  ${esc(n.name)}</div>
+        <div class="srv ${n.id === picked ? "on" : ""} ${latency.get(n.id) === null ? "off" : ""}" data-id="${n.id}">
+          ${flag(n)}
+          <div class="col" style="flex:1;gap:3px;min-width:0">
+            <div class="row"><span class="name">${esc(country(n))}</span>${verified.has(n.id) ? `<span class="badge">${icon("check", 10, 1.6)}Verified</span>` : ""}</div>
+            <div class="row muted" style="font-size:12px;gap:4px"><span style="color:var(--blue)">${icon("bolt", 11)}</span><span class="lat">${ms(n.id)}</span><span class="sep"></span>${esc(n.city)}<small>${esc(n.tee === "sev-snp" ? "SNP" : n.tee.toUpperCase())}</small></div>
           </div>
-          <button class="go" aria-label="Connect to node ${n.id}">${icon("power", 16)}</button>
+          <button class="go" aria-label="Connect to ${esc(place(n))}">${icon("power", 16)}</button>
         </div>`,
           )
           .join("") || `<p class="muted">No nodes in NodeRegistry.</p>`
@@ -167,6 +176,16 @@ function showServers() {
     </main>`);
   on("back", showDisconnected);
   wireNav();
+  if (!preview)
+    for (const n of nodes)
+      invoke<number | null>("ping", { nodeUrl: n.url })
+        .catch(() => null)
+        .then((v) => {
+          latency.set(n.id, v);
+          const el = document.querySelector(`.srv[data-id="${n.id}"]`);
+          el?.classList.toggle("off", v === null);
+          if (el) el.querySelector(".lat")!.textContent = ms(n.id);
+        });
   document.querySelectorAll<HTMLElement>(".srv").forEach((el) => {
     el.onclick = (e) => {
       picked = Number(el.dataset.id);
@@ -184,7 +203,7 @@ function verifying(node: ledger.Node) {
       orb("busy", 92, "Verifying"),
       `<div class="center">
         <p class="title">Verifying server…</p>
-        <p class="muted">Node #${node.id} · checking attestation</p>
+        <p class="muted">${esc(place(node))} · ${esc(TEE(node.tee))}</p>
       </div>
       <div class="steps glass"><p class="label">ATTESTATION</p>${steps(node.tee, [])}</div>
       <button class="btn white end" id="cancel">Cancel</button>`,
@@ -281,7 +300,7 @@ function showConnected() {
       196,
       76,
       orb("", 76, "Disconnect"),
-      `${serverCard(c.node, true, [["bolt", "Minutes used", `${used} min`], ["wallet", "Cost so far", money(used)]], `${TEE(c.att.tee)} · ${c.session.client_ip}`)}
+      `${serverCard(c.node, true, [["bolt", "Minutes used", `${used} min`], ["wallet", "Cost so far", money(used)]], `${c.node.city} · ${c.session.client_ip}`)}
       ${error ? `<p class="err" style="font-size:12px">${esc(error)}</p>` : ""}
       <button class="btn white end" id="disconnect"><span style="color:var(--red)">${icon("power", 18)}</span>Disconnect</button>`,
       `<div class="band-text"><p>Connection is secure · Attested</p><p class="timer">${clock((Date.now() - c.started) / 1000)}</p></div>`,
@@ -362,7 +381,8 @@ function showTopUp() {
 const preview = import.meta.env.DEV && new URLSearchParams(location.search).get("state");
 if (preview) {
   const tee = new URLSearchParams(location.search).get("tee") ?? "tdx";
-  nodes = [0, 1, 2].map((id) => ({ id, name: `34.172.3.${92 + id}`, url: "", tee: id ? "sev-snp" : tee, expectedMeasurement: "" }));
+  const at = [["US", "Iowa", 24], ["DE", "Frankfurt", 112], ["JP", "Tokyo", null]] as const;
+  nodes = at.map(([country, city, v], id) => (latency.set(id, v), { id, name: `34.172.3.${92 + id}`, url: "", tee: id ? "sev-snp" : tee, expectedMeasurement: "", country, city }));
   minutesLeft = 118;
   verified.add(0);
   const att = { tee, wg_pubkey: "", endpoint: "", node_id: 0, measurement: "", tcb_status: "" };

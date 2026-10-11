@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as client from "../../ledger/client/index.ts";
 import devnet from "../../ledger/devnet.json";
 
-export type Node = { id: number; name: string; url: string; tee: string; expectedMeasurement: string };
+export type Node = { id: number; name: string; url: string; tee: string; expectedMeasurement: string; country: string; city: string };
 export const MINT = devnet.mint;
 
 // Balances are encrypted on-chain, so the app tracks its own slot, voucher counter and minutes.
@@ -58,6 +58,8 @@ export async function listNodes(): Promise<Node[]> {
       url: `http://${a.endpoint}:8443`,
       tee: ["mock", "tdx", "sev-snp"][a.tee] ?? `unknown(${a.tee})`,
       expectedMeasurement: Array.from(a.expectedMeasurement, (b) => b.toString(16).padStart(2, "0")).join(""),
+      country: String.fromCharCode(...a.country),
+      city: a.city,
     }))
     .sort((a, b) => a.id - b.id);
 }
