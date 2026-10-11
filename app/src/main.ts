@@ -61,7 +61,7 @@ function render(html: string) {
 
 const header = (left = minutesLeft) => `
   <div class="header">
-    <div class="brand">${mark(22, true)}Wraps</div>
+    <div class="brand">${mark(22, !!conn)}Wraps</div>
     <div class="pill"><span class="dot"></span>${left} min left · ${money(left)}</div>
   </div>`;
 
@@ -206,7 +206,7 @@ function verifying(node: ledger.Node) {
         <p class="muted">${esc(place(node))} · ${esc(TEE(node.tee))}</p>
       </div>
       <div class="steps glass"><p class="label">ATTESTATION</p>${steps(node.tee, [])}</div>
-      <button class="btn white end" id="cancel">Cancel</button>`,
+      <button class="btn glass end" id="cancel">Cancel</button>`,
     ),
   );
 }
@@ -266,7 +266,7 @@ function refused(node: ledger.Node, reason: string) {
         <p class="reason">${esc(reason)}. No traffic was sent and no minutes were charged.</p>
         ${steps(node.tee, failedSteps(reason), 3)}
       </div>
-      <button class="btn white end" id="other"><span style="color:var(--blue)">${icon("globe", 18)}</span>Choose another server</button>`,
+      <button class="btn primary end" id="other">${icon("globe", 18)}Choose another server</button>`,
     ),
   );
   on("other", showServers);
